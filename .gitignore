@@ -1,0 +1,8 @@
+.omx/
+.planning/
+task_plan.md
+findings.md
+progress.md
+*.tmp
+*.bak
+*.log
