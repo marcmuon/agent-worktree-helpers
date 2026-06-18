@@ -1,7 +1,7 @@
 #!/bin/sh
 set -eu
 
-ROOT=$(CDPATH= cd "$(dirname "$0")/.." && pwd -P)
+ROOT=$(unset CDPATH; cd "$(dirname "$0")/.." && pwd -P)
 HELPER="$ROOT/shell/agent-worktree-helpers.sh"
 PASS_COUNT=0
 FAIL_COUNT=0

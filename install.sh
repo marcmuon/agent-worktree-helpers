@@ -70,7 +70,7 @@ if [ -z "$rc_file" ]; then
   esac
 fi
 
-script_dir=$(CDPATH= cd "$(dirname "$0")" && pwd -P)
+script_dir=$(unset CDPATH; cd "$(dirname "$0")" && pwd -P)
 source_file="$script_dir/shell/agent-worktree-helpers.sh"
 install_dir="$HOME/.agent-worktree-helpers"
 installed_file="$install_dir/agent-worktree-helpers.sh"
