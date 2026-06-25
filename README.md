@@ -128,6 +128,23 @@ If you run planning agents, their scratch (`task_plan.md`, `.planning/`, …) li
 
 The archive lives outside any repo, so it's never committed and never clutters your notes app — browse it in your editor any time. Tune what's carried with `WT_PLAN_FILES`, where it lives with `WT_PLAN_ARCHIVE`, or skip it for one command with `WT_NO_PLAN=1`.
 
+### Running a sandboxed agent (Codex, etc.) in a worktree
+
+A sandboxed agent scopes its filesystem/network to the *worktree folder* — but a linked worktree splits work across two places, so the sandbox needs two things, set in the agent's config (not this tool's):
+
+- **Write access to the repo's git dir.** A worktree's metadata lives in `<main-repo>/.git/worktrees/<name>/`, *outside* the worktree folder, so `git add`/`commit` (which writes `index.lock` there) gets blocked. Add the repo's `.git` — or a parent dir covering all your repos — to the agent's writable roots. For Codex (`~/.codex/config.toml`):
+  ```toml
+  [sandbox_workspace_write]
+  writable_roots = ["/path/to/your/code"]
+  ```
+- **Network access**, if you want the agent to `git push` / open PRs itself (and run `npm ci` / `pip install`). Separate switch, off by default:
+  ```toml
+  [sandbox_workspace_write]
+  network_access = true
+  ```
+
+Restart the agent after editing its config — sandbox policy is read at session start. Heads-up: the Codex **CLI** honors these keys; the Codex **app** has historically ignored them ([openai/codex#13373](https://github.com/openai/codex/issues/13373)), so push from a normal terminal there.
+
 ## Configuration
 
 Set these before sourcing the helper (or export them anytime):
