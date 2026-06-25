@@ -6,7 +6,7 @@ setup() {
 }
 
 @test "functions load in bash" {
-  bash -c '. "$1"; for fn in wt wtco wtrm wtls wtpr wttitle; do declare -F "$fn" >/dev/null || exit 1; done' sh "$HELPER"
+  bash -c '. "$1"; for fn in wt wtco wtrm wtls wtpr wttitle wtplan; do declare -F "$fn" >/dev/null || exit 1; done' sh "$HELPER"
 }
 
 @test "wtco rejects missing branch" {

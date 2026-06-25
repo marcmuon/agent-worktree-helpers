@@ -32,7 +32,7 @@ new_tmp_dir() {
 }
 
 test_functions_load_in_bash() {
-  bash -c '. "$1"; for fn in wt wtco wtrm wtls wtpr wttitle; do declare -F "$fn" >/dev/null || exit 1; done' sh "$HELPER"
+  bash -c '. "$1"; for fn in wt wtco wtrm wtls wtpr wttitle wtplan; do declare -F "$fn" >/dev/null || exit 1; done' sh "$HELPER"
 }
 
 test_wt_rejects_missing_name() {
@@ -244,6 +244,47 @@ test_setup_hook_runs() {
   return "$result"
 }
 
+test_plan_archive_and_restore() {
+  tmp=$(new_tmp_dir)
+  origin="$tmp/origin.git"
+  main="$tmp/main"
+  workroot="$tmp/worktrees"
+  archive="$tmp/plan-archive"
+
+  git init --bare "$origin" >/dev/null
+  git init "$main" >/dev/null
+  git -C "$main" config user.name "Test User"
+  git -C "$main" config user.email "test@example.com"
+  printf 'hi\n' >"$main/README.md"
+  printf 'task_plan.md\n.planning/\n' >"$main/.gitignore"
+  git -C "$main" add README.md .gitignore
+  git -C "$main" commit -m initial >/dev/null
+  git -C "$main" branch -M main
+  git -C "$main" remote add origin "$origin"
+  git -C "$main" push -u origin main >/dev/null 2>&1
+
+  HELPER="$HELPER" MAIN="$main" WORKTREE_ROOT="$workroot" WT_PLAN_ARCHIVE="$archive" \
+    WT_BRANCH_PREFIX='' WT_NO_SETUP=1 bash -c '
+    set -e
+    . "$HELPER"
+    cd "$MAIN"
+    wt feature-plan >/dev/null
+    printf "my plan\n" > task_plan.md
+    mkdir -p .planning && printf "notes\n" > .planning/notes.md
+    wtrm >/dev/null
+    test -f "$WT_PLAN_ARCHIVE/main/feature-plan/task_plan.md"
+    test -f "$WT_PLAN_ARCHIVE/main/feature-plan/.planning/notes.md"
+    git -C "$MAIN" branch -D feature-plan >/dev/null
+    cd "$MAIN"
+    wt feature-plan >/dev/null
+    test "$(cat task_plan.md)" = "my plan"
+    test -f .planning/notes.md
+  '
+  result=$?
+  rm -rf "$tmp"
+  return "$result"
+}
+
 run_test "functions load in bash" test_functions_load_in_bash
 run_test "wt rejects missing name" test_wt_rejects_missing_name
 run_test "wt rejects names with spaces" test_wt_rejects_spaces
@@ -256,6 +297,7 @@ run_test "real wt/wtrm worktree flow" test_real_worktree_flow
 run_test "wtco rejects missing branch" test_wtco_rejects_missing_name
 run_test "real wtco flow" test_real_wtco_flow
 run_test "setup hook runs in fresh worktree" test_setup_hook_runs
+run_test "plan archive + restore" test_plan_archive_and_restore
 
 if [ "$FAIL_COUNT" -ne 0 ]; then
   printf '%s test(s) failed\n' "$FAIL_COUNT" >&2

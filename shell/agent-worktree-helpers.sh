@@ -148,6 +148,74 @@ wttitle() {
   _awh_set_title
 }
 
+# --- planning-file archive -------------------------------------------------
+# Carry gitignored planning/scratch files across a worktree's lifecycle: wtrm
+# stashes them to a global archive, and wt/wtco/wtpr restore them when you
+# recreate a worktree on the same branch. Configure WT_PLAN_ARCHIVE (root dir)
+# and WT_PLAN_FILES (what to carry); disable per-command with WT_NO_PLAN=1.
+
+_awh_plan_archive_dir() {
+  local repo_name branch root slug
+  repo_name=$1
+  branch=$2
+  root=${WT_PLAN_ARCHIVE:-"$HOME/worktree-planning"}
+  slug=$(printf '%s' "$branch" | tr '/' '-')
+  printf '%s/%s/%s\n' "$root" "$repo_name" "$slug"
+}
+
+# Copy a worktree's planning files into the archive before the worktree dies.
+_awh_plan_save() {
+  local wt repo_name branch dest items item saved
+  wt=$1
+  repo_name=$2
+  branch=$3
+
+  [ "${WT_NO_PLAN:-0}" = "1" ] && return 0
+  [ -n "$branch" ] || branch=$(basename "$wt")
+
+  items=${WT_PLAN_FILES:-"task_plan.md findings.md progress.md .planning"}
+  dest=$(_awh_plan_archive_dir "$repo_name" "$branch")
+
+  saved=
+  # shellcheck disable=SC2086
+  for item in $items; do
+    if [ -e "$wt/$item" ]; then
+      mkdir -p "$dest" || return 0
+      rm -rf "${dest:?}/$item"
+      cp -R "$wt/$item" "$dest/" 2>/dev/null && saved="$saved $item"
+    fi
+  done
+
+  [ -n "$saved" ] && printf 'plan: archived%s -> %s\n' "$saved" "$dest"
+  return 0
+}
+
+# Restore archived planning files into a fresh worktree, without clobbering.
+_awh_plan_restore() {
+  local wt repo_name branch src items item restored
+  wt=$1
+  repo_name=$2
+  branch=$3
+
+  [ "${WT_NO_PLAN:-0}" = "1" ] && return 0
+  [ -n "$branch" ] || return 0
+
+  src=$(_awh_plan_archive_dir "$repo_name" "$branch")
+  [ -d "$src" ] || return 0
+
+  items=${WT_PLAN_FILES:-"task_plan.md findings.md progress.md .planning"}
+  restored=
+  # shellcheck disable=SC2086
+  for item in $items; do
+    if [ -e "$src/$item" ] && [ ! -e "$wt/$item" ]; then
+      cp -R "$src/$item" "$wt/" 2>/dev/null && restored="$restored $item"
+    fi
+  done
+
+  [ -n "$restored" ] && printf 'plan: restored%s from %s\n' "$restored" "$src"
+  return 0
+}
+
 wt() {
   local name repo main repo_name root base dir parent prefix branch
 
@@ -206,6 +274,7 @@ wt() {
   cd "$dir" || return 1
   printf 'wt: now on %s in %s\n' "$branch" "$dir"
   _awh_run_setup_hook "$main"
+  _awh_plan_restore "$dir" "$repo_name" "$branch"
   _awh_set_title
 }
 
@@ -261,6 +330,7 @@ wtco() {
   cd "$dir" || return 1
   printf 'wtco: now on %s in %s\n' "$branch" "$dir"
   _awh_run_setup_hook "$main"
+  _awh_plan_restore "$dir" "$repo_name" "$branch"
   _awh_set_title
 }
 
@@ -269,6 +339,39 @@ wtls() {
 
   repo=$(_awh_git_root) || return 1
   git -C "$repo" worktree list
+}
+
+# List archived plans (no args), or print the archive path for a branch.
+wtplan() {
+  local root repo main repo_name
+  root=${WT_PLAN_ARCHIVE:-"$HOME/worktree-planning"}
+
+  if [ "$#" -ge 1 ]; then
+    repo=$(_awh_git_root) || return 1
+    main=$(_awh_main_worktree "$repo") || return 1
+    repo_name=$(basename "$main")
+    _awh_plan_archive_dir "$repo_name" "$1"
+    return 0
+  fi
+
+  if repo=$(git rev-parse --show-toplevel 2>/dev/null); then
+    main=$(_awh_main_worktree "$repo")
+    repo_name=$(basename "$main")
+    if [ -d "$root/$repo_name" ]; then
+      printf 'archived plans for %s (%s):\n' "$repo_name" "$root/$repo_name"
+      ls -1 "$root/$repo_name"
+    else
+      printf 'no archived plans yet for %s (%s)\n' "$repo_name" "$root/$repo_name"
+    fi
+    return 0
+  fi
+
+  if [ -d "$root" ]; then
+    printf 'planning archive (%s):\n' "$root"
+    ls -1 "$root"
+  else
+    printf 'no planning archive yet (%s)\n' "$root"
+  fi
 }
 
 wtrm() {
@@ -292,6 +395,8 @@ wtrm() {
   fi
 
   branch=$(git -C "$repo" branch --show-current 2>/dev/null || true)
+
+  _awh_plan_save "$repo_abs" "$(basename "$main_abs")" "$branch"
 
   cd "$main_abs" || return 1
   git -C "$main_abs" worktree remove "$repo_abs" || return 1
@@ -350,5 +455,6 @@ wtpr() {
   cd "$dir" || return 1
   printf 'wtpr: now in %s\n' "$dir"
   _awh_run_setup_hook "$main"
+  _awh_plan_restore "$dir" "$repo_name" "$branch"
   _awh_set_title
 }

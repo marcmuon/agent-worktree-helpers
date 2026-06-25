@@ -47,6 +47,7 @@ wtco <branch>    # check out an EXISTING branch (yours or a teammate's) in a wor
 wtpr <number>    # fetch a GitHub PR into a review worktree
 wtrm             # safely remove the worktree you're standing in
 wtls             # list worktrees
+wtplan [branch]  # list archived plans, or print the archive path for a branch
 wttitle          # set the tab title to "<repo>:<branch>" (also done automatically)
 ```
 
@@ -117,6 +118,16 @@ chmod +x ~/code/example-app/.worktree-setup
 
 Now `wt add-export-button` lands you in a worktree that already has its `.env` and dependencies. Skip it for a one-off with `WT_NO_SETUP=1 wt quick-thing`.
 
+### Level 4 — keep your planning notes across worktree lifecycles
+
+If you run planning agents, their scratch (`task_plan.md`, `.planning/`, …) lives *inside* the worktree — so it dies when you `wtrm`. The helpers carry it for you:
+
+- `wtrm` copies those files to a global archive (`~/worktree-planning/<repo>/<branch>/`) **before** deleting the worktree.
+- `wt` / `wtco` / `wtpr` restore them when you recreate a worktree on the **same branch** — pick up exactly where you left off.
+- `wtplan` lists what's archived; `wtplan <branch>` prints its path, e.g. `cursor "$(wtplan you/feature)"`.
+
+The archive lives outside any repo, so it's never committed and never clutters your notes app — browse it in your editor any time. Tune what's carried with `WT_PLAN_FILES`, where it lives with `WT_PLAN_ARCHIVE`, or skip it for one command with `WT_NO_PLAN=1`.
+
 ## Configuration
 
 Set these before sourcing the helper (or export them anytime):
@@ -129,6 +140,9 @@ Set these before sourcing the helper (or export them anytime):
 | `WT_SETUP_HOOK` | _(unset)_ | Path to a global setup script, used if a repo has no `.worktree-setup`. |
 | `WT_NO_SETUP` | `0` | `WT_NO_SETUP=1` skips the setup hook for one command. |
 | `WT_NO_TITLE` | `0` | `WT_NO_TITLE=1` disables tab titling. |
+| `WT_PLAN_ARCHIVE` | `$HOME/worktree-planning` | Where `wtrm` stashes planning files and `wt`/`wtco` restore them from. |
+| `WT_PLAN_FILES` | `task_plan.md findings.md progress.md .planning` | Space-separated files/dirs carried across a worktree's lifecycle. |
+| `WT_NO_PLAN` | `0` | `WT_NO_PLAN=1` skips planning archive/restore for one command. |
 
 ```sh
 export WORKTREE_ROOT="$HOME/worktrees"
