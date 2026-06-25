@@ -96,8 +96,60 @@ _awh_cd_existing_worktree() {
   return 1
 }
 
+# Run a per-worktree setup hook inside the freshly created worktree (cwd).
+# $1 is the source checkout the command was run from, exported as WT_SOURCE so
+# the hook can copy gitignored files (e.g. .env) out of it. Skipped when
+# WT_NO_SETUP=1. The hook is the repo-root file ".worktree-setup" (must be
+# executable) or whatever WT_SETUP_HOOK points at. A non-zero hook warns but
+# does not unwind the worktree you are now standing in.
+_awh_run_setup_hook() {
+  local src hook
+
+  src=$1
+
+  [ "${WT_NO_SETUP:-0}" = "1" ] && return 0
+
+  hook=
+  if [ -n "${WT_SETUP_HOOK:-}" ] && [ -x "${WT_SETUP_HOOK}" ]; then
+    hook=$WT_SETUP_HOOK
+  elif [ -x "./.worktree-setup" ]; then
+    hook="./.worktree-setup"
+  fi
+
+  [ -n "$hook" ] || return 0
+
+  printf 'worktree setup: running %s\n' "$hook"
+  WT_SOURCE="$src" "$hook" "$src" ||
+    _awh_err "worktree setup: $hook exited non-zero (continuing anyway)"
+}
+
+# Title the terminal tab "<repo>:<branch>" so parallel worktree tabs are
+# distinguishable. No-ops when not writing to a TTY, or when WT_NO_TITLE=1.
+_awh_set_title() {
+  local repo main base branch
+
+  [ "${WT_NO_TITLE:-0}" = "1" ] && return 0
+  [ -t 1 ] || return 0
+
+  repo=$(git rev-parse --show-toplevel 2>/dev/null) || return 0
+  main=$(_awh_main_worktree "$repo" 2>/dev/null)
+  if [ -n "$main" ]; then
+    base=$(basename "$main")
+  else
+    base=$(basename "$repo")
+  fi
+  branch=$(git -C "$repo" branch --show-current 2>/dev/null)
+  [ -n "$branch" ] || branch=detached
+
+  printf '\033]2;%s\007' "$base:$branch"
+}
+
+wttitle() {
+  _awh_set_title
+}
+
 wt() {
-  local name repo main repo_name root base dir parent
+  local name repo main repo_name root base dir parent prefix branch
 
   if [ "$#" -ne 1 ]; then
     _awh_err "usage: wt <name>"
@@ -106,6 +158,14 @@ wt() {
 
   name=$1
   _awh_validate_branch_name "wt" "$name" || return $?
+
+  prefix=${WT_BRANCH_PREFIX:-}
+  if [ -n "$prefix" ]; then
+    branch="$prefix/$name"
+  else
+    branch="$name"
+  fi
+  _awh_validate_branch_name "wt" "$branch" || return $?
 
   repo=$(_awh_git_root) || return 1
   main=$(_awh_main_worktree "$repo") || return 1
@@ -120,8 +180,8 @@ wt() {
     return $?
   fi
 
-  if git -C "$repo" show-ref --verify --quiet "refs/heads/$name"; then
-    _awh_err "wt: branch already exists: $name"
+  if git -C "$repo" show-ref --verify --quiet "refs/heads/$branch"; then
+    _awh_err "wt: branch already exists: $branch"
     _awh_err "wt: choose a new name, or remove the old branch manually if it is no longer needed."
     return 1
   fi
@@ -142,9 +202,66 @@ wt() {
     return 1
   fi
 
-  git -C "$repo" worktree add -b "$name" "$dir" "origin/$base" || return 1
+  git -C "$repo" worktree add -b "$branch" "$dir" "origin/$base" || return 1
   cd "$dir" || return 1
-  printf 'wt: now in %s\n' "$dir"
+  printf 'wt: now on %s in %s\n' "$branch" "$dir"
+  _awh_run_setup_hook "$main"
+  _awh_set_title
+}
+
+# Check out an EXISTING branch (yours from elsewhere, or a teammate's) into its
+# own worktree. Unlike wt, which creates a new branch off origin/<base>, wtco
+# adopts <branch> from origin and tracks it. Slashes in the branch name are
+# flattened for the directory (teammate/feature -> teammate-feature).
+wtco() {
+  local arg branch repo main repo_name root safe dir parent
+
+  if [ "$#" -ne 1 ]; then
+    _awh_err "usage: wtco <branch>"
+    return 2
+  fi
+
+  arg=$1
+  branch=${arg#origin/}
+  _awh_validate_branch_name "wtco" "$branch" || return $?
+
+  repo=$(_awh_git_root) || return 1
+  main=$(_awh_main_worktree "$repo") || return 1
+  repo_name=$(basename "$main")
+  root=${WORKTREE_ROOT:-"$HOME/Projects/worktrees"}
+  safe=$(printf '%s' "$branch" | tr '/' '-')
+  dir="$root/$repo_name/$safe"
+  parent=$(dirname "$dir")
+
+  if [ -e "$dir" ]; then
+    _awh_cd_existing_worktree "$repo" "$dir"
+    return $?
+  fi
+
+  if ! git -C "$repo" remote get-url origin >/dev/null 2>&1; then
+    _awh_err "wtco: remote 'origin' was not found"
+    return 1
+  fi
+
+  mkdir -p "$parent" || return 1
+
+  if git -C "$repo" show-ref --verify --quiet "refs/heads/$branch"; then
+    printf 'wtco: checking out existing local branch: %s\n' "$branch"
+    git -C "$repo" worktree add "$dir" "$branch" || return 1
+  else
+    printf 'wtco: fetching origin %s...\n' "$branch"
+    if ! git -C "$repo" fetch origin "+$branch:refs/remotes/origin/$branch"; then
+      _awh_err "wtco: could not fetch branch from origin: $branch"
+      _awh_err "wtco: pass an existing remote branch name, for example: wtco teammate/feature"
+      return 1
+    fi
+    git -C "$repo" worktree add --track -b "$branch" "$dir" "origin/$branch" || return 1
+  fi
+
+  cd "$dir" || return 1
+  printf 'wtco: now on %s in %s\n' "$branch" "$dir"
+  _awh_run_setup_hook "$main"
+  _awh_set_title
 }
 
 wtls() {
@@ -232,4 +349,6 @@ wtpr() {
   git -C "$repo" worktree add -B "$branch" "$dir" FETCH_HEAD || return 1
   cd "$dir" || return 1
   printf 'wtpr: now in %s\n' "$dir"
+  _awh_run_setup_hook "$main"
+  _awh_set_title
 }

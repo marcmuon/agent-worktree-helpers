@@ -6,7 +6,13 @@ setup() {
 }
 
 @test "functions load in bash" {
-  bash -c '. "$1"; declare -F wt >/dev/null; declare -F wtrm >/dev/null; declare -F wtls >/dev/null; declare -F wtpr >/dev/null' sh "$HELPER"
+  bash -c '. "$1"; for fn in wt wtco wtrm wtls wtpr wttitle; do declare -F "$fn" >/dev/null || exit 1; done' sh "$HELPER"
+}
+
+@test "wtco rejects missing branch" {
+  run bash -c '. "$1"; wtco' sh "$HELPER"
+  [ "$status" -ne 0 ]
+  [[ "$output" == *"usage: wtco <branch>"* ]]
 }
 
 @test "wt rejects missing name" {

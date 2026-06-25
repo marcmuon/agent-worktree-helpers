@@ -1,4 +1,6 @@
+.omc/
 .omx/
+.claude/
 .planning/
 task_plan.md
 findings.md

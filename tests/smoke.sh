@@ -32,7 +32,7 @@ new_tmp_dir() {
 }
 
 test_functions_load_in_bash() {
-  bash -c '. "$1"; declare -F wt >/dev/null; declare -F wtrm >/dev/null; declare -F wtls >/dev/null; declare -F wtpr >/dev/null' sh "$HELPER"
+  bash -c '. "$1"; for fn in wt wtco wtrm wtls wtpr wttitle; do declare -F "$fn" >/dev/null || exit 1; done' sh "$HELPER"
 }
 
 test_wt_rejects_missing_name() {
@@ -171,6 +171,79 @@ test_real_worktree_flow() {
   return "$result"
 }
 
+test_wtco_rejects_missing_name() {
+  output=$(bash -c '. "$1"; wtco' sh "$HELPER" 2>&1) && return 1
+  printf '%s\n' "$output" | grep -q 'usage: wtco <branch>'
+}
+
+test_real_wtco_flow() {
+  tmp=$(new_tmp_dir)
+  origin="$tmp/origin.git"
+  main="$tmp/main"
+  workroot="$tmp/worktrees"
+
+  git init --bare "$origin" >/dev/null
+  git init "$main" >/dev/null
+  git -C "$main" config user.name "Test User"
+  git -C "$main" config user.email "test@example.com"
+  printf 'hello\n' >"$main/README.md"
+  git -C "$main" add README.md
+  git -C "$main" commit -m initial >/dev/null
+  git -C "$main" branch -M main
+  git -C "$main" remote add origin "$origin"
+  git -C "$main" push -u origin main >/dev/null 2>&1
+
+  git -C "$main" checkout -b teammate/feature >/dev/null 2>&1
+  printf 'work\n' >>"$main/README.md"
+  git -C "$main" commit -am feature >/dev/null
+  git -C "$main" push -u origin teammate/feature >/dev/null 2>&1
+  git -C "$main" checkout main >/dev/null 2>&1
+  git -C "$main" branch -D teammate/feature >/dev/null 2>&1
+
+  HELPER="$HELPER" MAIN="$main" WORKTREE_ROOT="$workroot" bash -c '
+    set -e
+    . "$HELPER"
+    cd "$MAIN"
+    wtco teammate/feature >/dev/null
+    test "$PWD" -ef "$WORKTREE_ROOT/main/teammate-feature"
+    test "$(git branch --show-current)" = "teammate/feature"
+  '
+  result=$?
+  rm -rf "$tmp"
+  return "$result"
+}
+
+test_setup_hook_runs() {
+  tmp=$(new_tmp_dir)
+  origin="$tmp/origin.git"
+  main="$tmp/main"
+  workroot="$tmp/worktrees"
+
+  git init --bare "$origin" >/dev/null
+  git init "$main" >/dev/null
+  git -C "$main" config user.name "Test User"
+  git -C "$main" config user.email "test@example.com"
+  printf 'hello\n' >"$main/README.md"
+  printf '#!/bin/sh\ntouch hook-ran\n' >"$main/.worktree-setup"
+  chmod +x "$main/.worktree-setup"
+  git -C "$main" add README.md .worktree-setup
+  git -C "$main" commit -m initial >/dev/null
+  git -C "$main" branch -M main
+  git -C "$main" remote add origin "$origin"
+  git -C "$main" push -u origin main >/dev/null 2>&1
+
+  HELPER="$HELPER" MAIN="$main" WORKTREE_ROOT="$workroot" bash -c '
+    set -e
+    . "$HELPER"
+    cd "$MAIN"
+    wt with-hook >/dev/null
+    test -f hook-ran
+  '
+  result=$?
+  rm -rf "$tmp"
+  return "$result"
+}
+
 run_test "functions load in bash" test_functions_load_in_bash
 run_test "wt rejects missing name" test_wt_rejects_missing_name
 run_test "wt rejects names with spaces" test_wt_rejects_spaces
@@ -180,6 +253,9 @@ run_test "installer dry-run is non-mutating" test_installer_dry_run_is_non_mutat
 run_test "installer is idempotent" test_installer_is_idempotent
 run_test "uninstaller removes block and files" test_uninstaller_removes_block_and_files
 run_test "real wt/wtrm worktree flow" test_real_worktree_flow
+run_test "wtco rejects missing branch" test_wtco_rejects_missing_name
+run_test "real wtco flow" test_real_wtco_flow
+run_test "setup hook runs in fresh worktree" test_setup_hook_runs
 
 if [ "$FAIL_COUNT" -ne 0 ]; then
   printf '%s test(s) failed\n' "$FAIL_COUNT" >&2

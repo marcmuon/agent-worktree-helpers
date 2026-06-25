@@ -2,45 +2,27 @@
 
 Terminal tabs are windows. Git worktrees are isolated folders.
 
-`agent-worktree-helpers` is a tiny sourced shell helper for developers who run coding agents in terminal tabs. The loop is simple: use your normal checkout for one task, and make a temporary Git worktree when another tab or agent needs its own clean workspace.
+`agent-worktree-helpers` is a tiny sourced shell helper for people who run coding agents (Claude Code, Codex, Cursor's CLI, plain you) in terminal tabs. The idea is small:
 
-cmux is a good example of a terminal where this workflow is useful, but this is not a cmux plugin and does not depend on cmux. It also works in Ghostty, iTerm, Terminal, tmux, and plain bash or zsh.
+> **One task — or one agent — per worktree.** Whatever is editing a folder gets a sealed-off, branch-local filesystem, so two tabs never fight over the same working tree.
 
-## Commands
+A Git worktree gives you a second checkout of the *same* repo on its own branch, sharing one `.git`. No second clone, no duplicated history. You keep your main checkout clean and spin up a throwaway folder whenever another tab or agent needs its own space.
 
-```sh
-wt <name>        # create a worktree and cd into it
-wtrm             # remove the current temporary worktree safely
-wtls             # list Git worktrees
-wtpr <number>    # optional: fetch a GitHub PR into a review worktree
-```
+It works in Ghostty, iTerm, Terminal, tmux, cmux, and plain bash or zsh. It is not a plugin for any of them.
 
-Defaults:
+## Why bother
 
-```sh
-WORKTREE_ROOT="${WORKTREE_ROOT:-$HOME/Projects/worktrees}"
-WT_BASE_BRANCH="${WT_BASE_BRANCH:-main}"
-```
+If you've ever:
 
-Set those before sourcing the helper if you want different defaults:
+- had an agent edit files on the wrong branch because another tab switched it underneath you,
+- copied the whole repo into `myapp-2/` for a quick side task and felt gross about it, or
+- wanted a planning agent and an implementing agent working at once without stepping on each other,
 
-```sh
-export WORKTREE_ROOT="$HOME/worktrees"
-export WT_BASE_BRANCH="master"
-source "$HOME/.agent-worktree-helpers/agent-worktree-helpers.sh"
-```
+…that's what this fixes. Each `wt` is a clean room.
 
-## Mental Model
+## Install
 
-- One task at a time: use the normal repo.
-- Parallel task: run `wt <name>`.
-- Done with a temporary workspace: run `wtrm` from inside that worktree.
-- Normal PR review by diff: no worktree needed.
-- Need to run a PR locally: use optional `wtpr <number>`.
-
-## Manual Install
-
-Clone or copy this repo, then source the helper from your shell rc file:
+Source the helper from your shell rc file. Manual:
 
 ```sh
 mkdir -p "$HOME/.agent-worktree-helpers"
@@ -48,156 +30,154 @@ cp shell/agent-worktree-helpers.sh "$HOME/.agent-worktree-helpers/agent-worktree
 printf '%s\n' 'source "$HOME/.agent-worktree-helpers/agent-worktree-helpers.sh"' >> "$HOME/.zshrc"
 ```
 
-Use `~/.bashrc` instead of `~/.zshrc` if you use bash.
-
-For the current shell session:
+Use `~/.bashrc` for bash. Or use the installer, which backs up your rc file and adds one marked block (and is idempotent):
 
 ```sh
+sh install.sh --dry-run   # preview
+sh install.sh             # install for your detected shell
+```
+
+Then open a new tab, or `source` the file in your current one.
+
+## Commands
+
+```sh
+wt <name>        # new branch off origin/<base>, in its own worktree, and cd in
+wtco <branch>    # check out an EXISTING branch (yours or a teammate's) in a worktree
+wtpr <number>    # fetch a GitHub PR into a review worktree
+wtrm             # safely remove the worktree you're standing in
+wtls             # list worktrees
+wttitle          # set the tab title to "<repo>:<branch>" (also done automatically)
+```
+
+`wt` vs `wtco` is the one distinction worth remembering:
+
+| | creates | use it when |
+|---|---|---|
+| `wt feature-x` | a **new** branch off `origin/<base>` | you're starting fresh work |
+| `wtco teammate/feature` | adopts an **existing** branch from `origin` and tracks it | you're reviewing or continuing someone's branch |
+
+## Use it at three levels
+
+### Level 1 — parallel branches, no clobbering
+
+You just want a second thing in flight without disturbing your current branch.
+
+```sh
+cd ~/code/example-app
+wt fix-login-race      # creates + enters $WORKTREE_ROOT/example-app/fix-login-race
+# ...work, commit, open a PR...
+wtrm                   # back to where you were; the worktree is gone
+```
+
+### Level 2 — one agent per worktree
+
+This is the point of the tool. Give each agent its own folder so the *current directory* is the isolation boundary — the thing the agent can see and edit.
+
+```sh
+# tab 1 — an implementing agent:
+cd ~/code/example-app && wt add-export-button
+codex            # or claude, cursor agent, etc. It can only touch this folder.
+
+# tab 2 — review a PR at the same time, fully isolated:
+wtpr 1234
+claude           # "review this diff vs main"
+```
+
+A pattern that works well: a **planning** agent (e.g. Claude) reads the clean main checkout and writes a spec; an **implementing** agent (e.g. Codex) works inside a `wt` worktree from that spec. Different agents, different folders, zero overlap. The tab title (`example-app:add-export-button`) tells you at a glance which branch a given pane will modify.
+
+Rules of thumb:
+
+- One worktree per task; one *writing* agent per worktree.
+- Don't let two agents edit the same worktree unless you're deliberately pairing.
+- Keep your main checkout for reading and planning, not for agent edits.
+
+### Level 3 — real projects with real dependencies
+
+A fresh worktree only contains *tracked* files. Two things follow, and both are easy to handle.
+
+**Gitignored runtime files are missing.** Your `.env` isn't in Git, so a new worktree won't have it.
+
+**Dependencies can't be shared between worktrees.** A Python `.venv` hardcodes absolute paths in its scripts; `node_modules` contains native, path-bound binaries. Copying or symlinking either across worktrees breaks them in confusing ways. The fix is to install fresh per worktree — which is fast, because package managers (uv, npm, pnpm, …) share a global cache, so you're hardlinking, not re-downloading.
+
+Automate both with a **setup hook**: drop an executable `.worktree-setup` at your repo root and `wt`/`wtco`/`wtpr` will run it inside each new worktree. There's a ready-to-edit template in [`examples/worktree-setup`](examples/worktree-setup):
+
+```sh
+#!/bin/sh
+set -eu
+src=${1:-}                                   # the checkout you ran wt from
+[ -f "$src/.env" ] && [ ! -f .env ] && cp "$src/.env" .env
+uv sync                                       # or: npm ci / pnpm install / etc.
+```
+
+```sh
+cp examples/worktree-setup ~/code/example-app/.worktree-setup
+chmod +x ~/code/example-app/.worktree-setup
+```
+
+Now `wt add-export-button` lands you in a worktree that already has its `.env` and dependencies. Skip it for a one-off with `WT_NO_SETUP=1 wt quick-thing`.
+
+## Configuration
+
+Set these before sourcing the helper (or export them anytime):
+
+| Variable | Default | What it does |
+|---|---|---|
+| `WORKTREE_ROOT` | `$HOME/Projects/worktrees` | Where worktrees are created: `$WORKTREE_ROOT/<repo>/<name>`. |
+| `WT_BASE_BRANCH` | `main` | Branch `wt` branches from (set to `master` if that's your default). |
+| `WT_BRANCH_PREFIX` | _(unset)_ | If set, `wt foo` creates branch `<prefix>/foo`. Handy for namespacing, e.g. `export WT_BRANCH_PREFIX="$(whoami)"` → `you/foo`. The folder name stays `foo`. |
+| `WT_SETUP_HOOK` | _(unset)_ | Path to a global setup script, used if a repo has no `.worktree-setup`. |
+| `WT_NO_SETUP` | `0` | `WT_NO_SETUP=1` skips the setup hook for one command. |
+| `WT_NO_TITLE` | `0` | `WT_NO_TITLE=1` disables tab titling. |
+
+```sh
+export WORKTREE_ROOT="$HOME/worktrees"
+export WT_BASE_BRANCH="master"
+export WT_BRANCH_PREFIX="$(whoami)"
 source "$HOME/.agent-worktree-helpers/agent-worktree-helpers.sh"
 ```
 
-## Installer
+## Things that will bite you
 
-Preview first:
+Generic to worktrees, not to this tool — worth knowing once:
 
-```sh
-sh install.sh --dry-run
-```
-
-Install for your detected shell:
-
-```sh
-sh install.sh
-```
-
-Choose a shell or rc file explicitly:
-
-```sh
-sh install.sh --shell zsh
-sh install.sh --rc-file "$HOME/.zshrc"
-```
-
-The installer copies the helper to `~/.agent-worktree-helpers/agent-worktree-helpers.sh`, backs up the rc file before editing, and adds exactly one marked block:
-
-```sh
-# >>> agent-worktree-helpers >>>
-source "$HOME/.agent-worktree-helpers/agent-worktree-helpers.sh"
-# <<< agent-worktree-helpers <<<
-```
-
-Running the installer twice does not duplicate the block.
-
-## Uninstall
-
-Preview:
-
-```sh
-sh uninstall.sh --dry-run
-```
-
-Remove the rc block:
-
-```sh
-sh uninstall.sh
-```
-
-Remove the rc block and installed helper files:
-
-```sh
-sh uninstall.sh --remove-files
-```
-
-## Examples
-
-From a normal repo:
-
-```sh
-cd ~/src/example-app
-wt fix-login-race
-```
-
-That creates and enters:
-
-```text
-$WORKTREE_ROOT/example-app/fix-login-race
-```
-
-When finished:
-
-```sh
-wtrm
-```
-
-If the worktree has uncommitted changes, `wtrm` refuses and prints `git status --short`.
+- **Don't copy a `.venv` or `node_modules` between worktrees.** Reinstall per worktree (the setup hook does this). It's cheap thanks to the shared package cache.
+- **Only one worktree can run a stateful local stack at a time** if they all point at the same local database / Redis / fixed dev-server port. For editing, compiling, and unit tests this never matters; it only matters when you actually boot the app. Give a second runner its own DB name and ports if you need two live at once.
+- **Pre-commit hooks live in the shared `.git`,** so they're inherited by every worktree of a clone automatically — but a *separate clone* has its own hooks. Make worktrees from the clone whose hooks you want.
+- **`wtrm` removes the folder, not the branch.** It prints the `git branch -D` command if you also want the branch gone. This is true for `wt` and `wtco` alike.
 
 ## Safety
 
-- `wt` requires a name and rejects names containing spaces.
-- `wt` refuses to overwrite an existing non-worktree directory.
-- If the target directory is already a worktree for the same repo, `wt` just enters it.
-- `wtrm` refuses to remove the main checkout.
-- `wtrm` refuses to remove a dirty worktree.
-- `wtrm` does not delete branches automatically. It prints the manual branch deletion command.
-- `wtpr` expects a GitHub-style `origin` remote that supports `pull/<number>/head`.
+- `wt` requires a name, rejects spaces, and validates the branch name.
+- `wt` refuses to reuse an existing branch; `wtco` adopts one on purpose (and won't clobber local commits — if the branch already exists locally it checks it out as-is).
+- If a target directory is already a worktree for the same repo, the command just enters it.
+- `wtrm` refuses to remove the main checkout, and refuses to remove a dirty worktree (it prints `git status --short`).
+- The setup hook only runs a file that's already in your checkout, and only if it's executable. Disable it with `WT_NO_SETUP=1`.
 
 ## Troubleshooting
 
-### My default branch is master, not main
+**My default branch is `master`.** `export WT_BASE_BRANCH=master` before sourcing.
 
-Set `WT_BASE_BRANCH` before sourcing:
+**`wtrm` says the worktree is dirty.** Commit, stash, or discard the changes it lists, then run it again. This is deliberate — it won't throw away work.
 
-```sh
-export WT_BASE_BRANCH=master
-```
+**`wt` says the branch already exists.** Pick another name, or delete the old branch (`git branch -D <name>`) once you're sure. To resume an existing branch instead, use `wtco <name>`.
 
-### `wtrm` refuses because the worktree is dirty
+**`wtco` can't fetch the branch.** It expects an existing branch on `origin`. Check the name with `git ls-remote --heads origin`.
 
-Check the printed status. Commit, stash, reset, or delete files yourself, then run `wtrm` again.
+**`wtpr` can't fetch a PR.** It uses `git fetch origin pull/<n>/head`, which is GitHub-style. For other hosts, fetch the branch and use `wtco`.
 
-### The branch already exists
+**Two dev servers won't both start.** Same fixed port. Set your framework's port per worktree (e.g. an env var in `.worktree-setup`).
 
-`wt <name>` creates a new branch with the same name. Pick a new name, or delete the old branch manually after you are sure it is safe:
+## Security / trust
 
-```sh
-git branch -D <name>
-```
-
-### I ran `wtrm` from the main checkout
-
-That is refused on purpose. `wtrm` is only for temporary worktrees.
-
-### `wtpr` cannot fetch a PR
-
-`wtpr` uses:
-
-```sh
-git fetch origin "pull/<number>/head"
-```
-
-That works for GitHub-style remotes. For other hosts, fetch the branch manually or use `wt <name>`.
-
-## Security / Trust
-
-The installer is intentionally boring. It prints what it changes, copies one shell file into `~/.agent-worktree-helpers`, backs up your selected rc file, and adds one marked source block. The uninstaller removes only that marked block.
-
-You can skip the installer and use the manual install commands above.
+The installer is intentionally boring: it prints what it changes, copies one shell file into `~/.agent-worktree-helpers`, backs up your rc file, and adds one marked source block. The uninstaller removes only that block (and, with `--remove-files`, the installed file). You can skip it entirely and use the manual install above.
 
 ## Development
 
-Run the smoke tests:
-
 ```sh
-sh tests/smoke.sh
-```
-
-Run ShellCheck if installed:
-
-```sh
+sh tests/smoke.sh                                                            # POSIX smoke tests
 shellcheck install.sh uninstall.sh shell/agent-worktree-helpers.sh tests/smoke.sh
+bats tests/smoke.bats                                                        # if bats is installed
 ```
 
-Run the optional Bats tests if Bats is installed:
-
-```sh
-bats tests/smoke.bats
-```
+CI runs all three on Ubuntu and macOS.
