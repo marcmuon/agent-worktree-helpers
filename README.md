@@ -45,7 +45,7 @@ Then open a new tab, or `source` the file in your current one.
 wt <name>        # new branch off origin/<base>, in its own worktree, and cd in
 wtco <branch>    # check out an EXISTING branch (yours or a teammate's) in a worktree
 wtpr <number>    # fetch a GitHub PR into a review worktree
-wtrm             # safely remove the worktree you're standing in
+wtrm [name]      # safely remove the current worktree, or a named worktree from main
 wtls             # list worktrees
 wtplan [branch]  # list archived plans, or print the archive path for a branch
 wttitle          # set the tab title to "<repo>:<branch>" (also done automatically)
@@ -69,6 +69,8 @@ cd ~/code/example-app
 wt fix-login-race      # creates + enters $WORKTREE_ROOT/example-app/fix-login-race
 # ...work, commit, open a PR...
 wtrm                   # back to where you were; the worktree is gone
+# or, from the main checkout:
+wtrm fix-login-race
 ```
 
 ### Level 2 — one agent per worktree
@@ -125,6 +127,7 @@ If you run planning agents, their scratch (`task_plan.md`, `.planning/`, …) li
 - `wtrm` copies those files to a global archive (`~/worktree-planning/<repo>/<branch>/`) **before** deleting the worktree.
 - `wt` / `wtco` / `wtpr` restore them when you recreate a worktree on the **same branch** — pick up exactly where you left off.
 - `wtplan` lists what's archived; `wtplan <branch>` prints its path, e.g. `cursor "$(wtplan you/feature)"`.
+- If no configured planning files are present, `wtrm` says so. If a configured planning file cannot be archived, `wtrm` aborts and leaves the worktree in place.
 
 The archive lives outside any repo, so it's never committed and never clutters your notes app — browse it in your editor any time. Tune what's carried with `WT_PLAN_FILES`, where it lives with `WT_PLAN_ARCHIVE`, or skip it for one command with `WT_NO_PLAN=1`.
 
@@ -182,7 +185,7 @@ Generic to worktrees, not to this tool — worth knowing once:
 - `wt` requires a name, rejects spaces, and validates the branch name.
 - `wt` refuses to reuse an existing branch; `wtco` adopts one on purpose (and won't clobber local commits — if the branch already exists locally it checks it out as-is).
 - If a target directory is already a worktree for the same repo, the command just enters it.
-- `wtrm` refuses to remove the main checkout, and refuses to remove a dirty worktree (it prints `git status --short`).
+- `wtrm` refuses to remove the main checkout, and refuses to remove a dirty worktree (it prints `git status --short`). From the main checkout, `wtrm <name>` removes `$WORKTREE_ROOT/<repo>/<name>`.
 - The setup hook only runs a file that's already in your checkout, and only if it's executable. Disable it with `WT_NO_SETUP=1`.
 
 ## Troubleshooting

@@ -3,6 +3,8 @@
 setup() {
   ROOT="$(cd "$BATS_TEST_DIRNAME/.." && pwd -P)"
   HELPER="$ROOT/shell/agent-worktree-helpers.sh"
+  unset WORKTREE_ROOT WT_BASE_BRANCH WT_BRANCH_PREFIX WT_SETUP_HOOK
+  unset WT_NO_SETUP WT_NO_TITLE WT_PLAN_ARCHIVE WT_PLAN_FILES WT_NO_PLAN
 }
 
 @test "functions load in bash" {

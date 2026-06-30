@@ -165,7 +165,7 @@ _awh_plan_archive_dir() {
 
 # Copy a worktree's planning files into the archive before the worktree dies.
 _awh_plan_save() {
-  local wt repo_name branch dest items item saved
+  local wt repo_name branch dest items item saved found
   wt=$1
   repo_name=$2
   branch=$3
@@ -177,16 +177,33 @@ _awh_plan_save() {
   dest=$(_awh_plan_archive_dir "$repo_name" "$branch")
 
   saved=
+  found=
   # shellcheck disable=SC2086
   for item in $items; do
     if [ -e "$wt/$item" ]; then
-      mkdir -p "$dest" || return 0
-      rm -rf "${dest:?}/$item"
-      cp -R "$wt/$item" "$dest/" 2>/dev/null && saved="$saved $item"
+      found="$found $item"
+      if ! mkdir -p "$dest"; then
+        _awh_err "plan: could not create archive directory: $dest"
+        return 1
+      fi
+      if ! rm -rf "${dest:?}/$item"; then
+        _awh_err "plan: could not clear existing archive item: $dest/$item"
+        return 1
+      fi
+      if cp -R "$wt/$item" "$dest/" 2>/dev/null; then
+        saved="$saved $item"
+      else
+        _awh_err "plan: could not archive $item -> $dest"
+        return 1
+      fi
     fi
   done
 
-  [ -n "$saved" ] && printf 'plan: archived%s -> %s\n' "$saved" "$dest"
+  if [ -n "$saved" ]; then
+    printf 'plan: archived%s -> %s\n' "$saved" "$dest"
+  elif [ -z "$found" ]; then
+    printf 'plan: no configured planning files found in %s\n' "$wt"
+  fi
   return 0
 }
 
@@ -375,10 +392,38 @@ wtplan() {
 }
 
 wtrm() {
-  local repo main repo_abs main_abs dirty branch
+  local repo main repo_name root target repo_abs main_abs dirty branch
+
+  if [ "$#" -gt 1 ]; then
+    _awh_err "usage: wtrm [name-or-path]"
+    return 2
+  fi
 
   repo=$(_awh_git_root) || return 1
   main=$(_awh_main_worktree "$repo") || return 1
+
+  if [ "$#" -eq 1 ]; then
+    repo_name=$(basename "$main")
+    root=${WORKTREE_ROOT:-"$HOME/Projects/worktrees"}
+
+    case "$1" in
+      */*) target=$1 ;;
+      *) target="$root/$repo_name/$1" ;;
+    esac
+
+    if [ ! -d "$target" ]; then
+      _awh_err "wtrm: worktree not found: $target"
+      return 1
+    fi
+
+    if ! _awh_same_repo_worktree "$repo" "$target"; then
+      _awh_err "wtrm: target is not a worktree for this repo: $target"
+      return 1
+    fi
+
+    repo=$target
+  fi
+
   repo_abs=$(_awh_abs_path "$repo") || return 1
   main_abs=$(_awh_abs_path "$main") || return 1
 
@@ -396,7 +441,10 @@ wtrm() {
 
   branch=$(git -C "$repo" branch --show-current 2>/dev/null || true)
 
-  _awh_plan_save "$repo_abs" "$(basename "$main_abs")" "$branch"
+  if ! _awh_plan_save "$repo_abs" "$(basename "$main_abs")" "$branch"; then
+    _awh_err "wtrm: planning archive failed; worktree was not removed"
+    return 1
+  fi
 
   cd "$main_abs" || return 1
   git -C "$main_abs" worktree remove "$repo_abs" || return 1

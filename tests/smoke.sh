@@ -6,6 +6,9 @@ HELPER="$ROOT/shell/agent-worktree-helpers.sh"
 PASS_COUNT=0
 FAIL_COUNT=0
 
+unset WORKTREE_ROOT WT_BASE_BRANCH WT_BRANCH_PREFIX WT_SETUP_HOOK
+unset WT_NO_SETUP WT_NO_TITLE WT_PLAN_ARCHIVE WT_PLAN_FILES WT_NO_PLAN
+
 ok() {
   PASS_COUNT=$((PASS_COUNT + 1))
   printf 'ok - %s\n' "$1"
@@ -171,6 +174,83 @@ test_real_worktree_flow() {
   return "$result"
 }
 
+test_wtrm_removes_named_worktree_from_main_checkout() {
+  tmp=$(new_tmp_dir)
+  origin="$tmp/origin.git"
+  main="$tmp/main"
+  workroot="$tmp/worktrees"
+  feature_dir="$workroot/main/feature-by-name"
+
+  git init --bare "$origin" >/dev/null
+  git init "$main" >/dev/null
+  git -C "$main" config user.name "Test User"
+  git -C "$main" config user.email "test@example.com"
+  printf 'hello\n' >"$main/README.md"
+  git -C "$main" add README.md
+  git -C "$main" commit -m initial >/dev/null
+  git -C "$main" branch -M main
+  git -C "$main" remote add origin "$origin"
+  git -C "$main" push -u origin main >/dev/null 2>&1
+
+  HELPER="$HELPER" MAIN="$main" WORKTREE_ROOT="$workroot" bash -c '
+    set -e
+    . "$HELPER"
+    cd "$MAIN"
+    wt feature-by-name >/dev/null
+    cd "$MAIN"
+    output=$(wtrm feature-by-name)
+    printf "%s\n" "$output" | grep -q "plan: no configured planning files found"
+    test "$PWD" = "$MAIN"
+  '
+
+  [ ! -d "$feature_dir" ]
+  result=$?
+  rm -rf "$tmp"
+  return "$result"
+}
+
+test_wtrm_refuses_when_plan_archive_fails() {
+  tmp=$(new_tmp_dir)
+  origin="$tmp/origin.git"
+  main="$tmp/main"
+  workroot="$tmp/worktrees"
+  feature_dir="$workroot/main/feature-plan-fail"
+  archive_file="$tmp/plan-archive"
+  output_file="$tmp/wtrm.out"
+
+  git init --bare "$origin" >/dev/null
+  git init "$main" >/dev/null
+  git -C "$main" config user.name "Test User"
+  git -C "$main" config user.email "test@example.com"
+  printf 'hello\n' >"$main/README.md"
+  printf 'task_plan.md\n' >"$main/.gitignore"
+  git -C "$main" add README.md .gitignore
+  git -C "$main" commit -m initial >/dev/null
+  git -C "$main" branch -M main
+  git -C "$main" remote add origin "$origin"
+  git -C "$main" push -u origin main >/dev/null 2>&1
+  printf 'not a directory\n' >"$archive_file"
+
+  HELPER="$HELPER" MAIN="$main" WORKTREE_ROOT="$workroot" WT_PLAN_ARCHIVE="$archive_file" \
+    FEATURE_DIR="$feature_dir" OUT="$output_file" WT_BRANCH_PREFIX='' WT_NO_SETUP=1 bash -c '
+    set -e
+    . "$HELPER"
+    cd "$MAIN"
+    wt feature-plan-fail >/dev/null
+    printf "my plan\n" > task_plan.md
+    if wtrm >"$OUT" 2>&1; then
+      exit 1
+    fi
+    grep -q "plan: could not create archive directory" "$OUT"
+    grep -q "wtrm: planning archive failed" "$OUT"
+    test -d "$FEATURE_DIR"
+  '
+
+  result=$?
+  rm -rf "$tmp"
+  return "$result"
+}
+
 test_wtco_rejects_missing_name() {
   output=$(bash -c '. "$1"; wtco' sh "$HELPER" 2>&1) && return 1
   printf '%s\n' "$output" | grep -q 'usage: wtco <branch>'
@@ -294,6 +374,8 @@ run_test "installer dry-run is non-mutating" test_installer_dry_run_is_non_mutat
 run_test "installer is idempotent" test_installer_is_idempotent
 run_test "uninstaller removes block and files" test_uninstaller_removes_block_and_files
 run_test "real wt/wtrm worktree flow" test_real_worktree_flow
+run_test "wtrm removes named worktree from main checkout" test_wtrm_removes_named_worktree_from_main_checkout
+run_test "wtrm refuses when plan archive fails" test_wtrm_refuses_when_plan_archive_fails
 run_test "wtco rejects missing branch" test_wtco_rejects_missing_name
 run_test "real wtco flow" test_real_wtco_flow
 run_test "setup hook runs in fresh worktree" test_setup_hook_runs
