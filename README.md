@@ -122,7 +122,7 @@ Now `wt add-export-button` lands you in a worktree that already has its `.env` a
 
 ### Level 4 — keep your planning notes across worktree lifecycles
 
-If you run planning agents, their scratch (`task_plan.md`, `.planning/`, …) lives *inside* the worktree — so it dies when you `wtrm`. The helpers carry it for you:
+If you run planning agents, their scratch (`task_plan.md`, `.planning/`, `.codex/`, `.claude/`, `.omx/`, …) lives *inside* the worktree — so it dies when you `wtrm`. The helpers carry it for you:
 
 - `wtrm` copies those files to a global archive (`~/worktree-planning/<repo>/<branch>/`) **before** deleting the worktree.
 - `wt` / `wtco` / `wtpr` restore them when you recreate a worktree on the **same branch** — pick up exactly where you left off.
@@ -130,7 +130,7 @@ If you run planning agents, their scratch (`task_plan.md`, `.planning/`, …) li
 - If no configured planning files are present, `wtrm` aborts and leaves the worktree in place. Use `WT_NO_PLAN=1 wtrm` only when you explicitly want to remove a worktree without archiving plans.
 - If a configured planning file cannot be archived, `wtrm` aborts and leaves the worktree in place.
 
-The archive lives outside any repo, so it's never committed and never clutters your notes app — browse it in your editor any time. Tune extra root-level files with `WT_PLAN_FILES`, where the archive lives with `WT_PLAN_ARCHIVE`, or skip it for one command with `WT_NO_PLAN=1`. The `.planning` directory is always protected unless `WT_NO_PLAN=1` is set.
+The archive lives outside any repo, so it's never committed and never clutters your notes app — browse it in your editor any time. Tune extra root-level files with `WT_PLAN_FILES`, where the archive lives with `WT_PLAN_ARCHIVE`, or skip it for one command with `WT_NO_PLAN=1`. The `.planning`, `.codex`, `.claude`, `.omc`, `.omx`, `.agents`, and `.cursor` directories are always protected unless `WT_NO_PLAN=1` is set.
 
 ### Running a sandboxed agent (Codex, etc.) in a worktree
 
@@ -162,7 +162,7 @@ Set these before sourcing the helper (or export them anytime):
 | `WT_NO_SETUP` | `0` | `WT_NO_SETUP=1` skips the setup hook for one command. |
 | `WT_NO_TITLE` | `0` | `WT_NO_TITLE=1` disables tab titling. |
 | `WT_PLAN_ARCHIVE` | `$HOME/worktree-planning` | Where `wtrm` stashes planning files and `wt`/`wtco` restore them from. |
-| `WT_PLAN_FILES` | `task_plan.md findings.md progress.md .planning` | Space-separated files/dirs carried across a worktree's lifecycle. `.planning` is always included as a safety item unless `WT_NO_PLAN=1` is set. |
+| `WT_PLAN_FILES` | `task_plan.md findings.md progress.md .planning` | Space-separated files/dirs carried across a worktree's lifecycle. Agent-local state dirs are always included as safety items unless `WT_NO_PLAN=1` is set. |
 | `WT_NO_PLAN` | `0` | `WT_NO_PLAN=1` skips planning archive/restore for one command. |
 
 ```sh

@@ -164,12 +164,13 @@ _awh_plan_archive_dir() {
 }
 
 _awh_plan_items() {
-  local items
+  local items protected
   items=${WT_PLAN_FILES:-"task_plan.md findings.md progress.md .planning"}
+  protected=".planning .codex .claude .omc .omx .agents .cursor"
 
-  # Treat the parallel planning directory as a safety default even if a shell
-  # session still has an older WT_PLAN_FILES override in its environment.
-  printf '%s .planning\n' "$items" | awk '
+  # Treat agent-local scratch dirs as safety defaults even if a shell session
+  # still has an older WT_PLAN_FILES override in its environment.
+  printf '%s %s\n' "$items" "$protected" | awk '
     {
       for (i = 1; i <= NF; i++) {
         if (!seen[$i]++) {

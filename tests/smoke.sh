@@ -366,6 +366,64 @@ test_zsh_archives_planning_dir() {
   return "$result"
 }
 
+test_agent_state_dirs_archive_and_restore() {
+  tmp=$(new_tmp_dir)
+  origin="$tmp/origin.git"
+  main="$tmp/main"
+  workroot="$tmp/worktrees"
+  archive="$tmp/plan-archive"
+
+  git init --bare "$origin" >/dev/null
+  git init "$main" >/dev/null
+  git -C "$main" config user.name "Test User"
+  git -C "$main" config user.email "test@example.com"
+  printf 'hi\n' >"$main/README.md"
+  printf '.agents/\n.claude/\n.codex/\n.cursor/\n.omc/\n.omx/\n.planning/\n' >"$main/.gitignore"
+  git -C "$main" add README.md .gitignore
+  git -C "$main" commit -m initial >/dev/null
+  git -C "$main" branch -M main
+  git -C "$main" remote add origin "$origin"
+  git -C "$main" push -u origin main >/dev/null 2>&1
+
+  HELPER="$HELPER" MAIN="$main" WORKTREE_ROOT="$workroot" WT_PLAN_ARCHIVE="$archive" \
+    WT_PLAN_FILES='task_plan.md findings.md progress.md' WT_BRANCH_PREFIX='' WT_NO_SETUP=1 zsh -c '
+    set -e
+    . "$HELPER"
+    cd "$MAIN"
+    wt feature-agent-state >/dev/null
+    mkdir -p .agents/skills/demo .claude .codex .cursor/rules .omc .omx/state .planning/active
+    printf "skill\n" > .agents/skills/demo/SKILL.md
+    printf "claude\n" > .claude/settings.local.json
+    printf "codex\n" > .codex/config.toml
+    printf "cursor\n" > .cursor/rules/local.mdc
+    printf "omc\n" > .omc/state.json
+    printf "omx\n" > .omx/state/run.json
+    printf "plan\n" > .planning/active/progress.md
+    wtrm >/dev/null
+    for f in \
+      .agents/skills/demo/SKILL.md \
+      .claude/settings.local.json \
+      .codex/config.toml \
+      .cursor/rules/local.mdc \
+      .omc/state.json \
+      .omx/state/run.json \
+      .planning/active/progress.md
+    do
+      test -f "$WT_PLAN_ARCHIVE/main/feature-agent-state/$f"
+    done
+    git -C "$MAIN" branch -D feature-agent-state >/dev/null
+    cd "$MAIN"
+    wt feature-agent-state >/dev/null
+    test "$(cat .codex/config.toml)" = "codex"
+    test "$(cat .omx/state/run.json)" = "omx"
+    test "$(cat .planning/active/progress.md)" = "plan"
+  '
+
+  result=$?
+  rm -rf "$tmp"
+  return "$result"
+}
+
 test_wtco_rejects_missing_name() {
   output=$(bash -c '. "$1"; wtco' sh "$HELPER" 2>&1) && return 1
   printf '%s\n' "$output" | grep -q 'usage: wtco <branch>'
@@ -494,6 +552,7 @@ run_test "wtrm removes planless worktree with explicit override" test_wtrm_remov
 run_test "wtrm refuses when plan archive fails" test_wtrm_refuses_when_plan_archive_fails
 run_test "planning dir survives legacy WT_PLAN_FILES override" test_planning_dir_survives_legacy_plan_files_override
 run_test "zsh archives planning dir" test_zsh_archives_planning_dir
+run_test "agent state dirs archive and restore" test_agent_state_dirs_archive_and_restore
 run_test "wtco rejects missing branch" test_wtco_rejects_missing_name
 run_test "real wtco flow" test_real_wtco_flow
 run_test "setup hook runs in fresh worktree" test_setup_hook_runs
