@@ -290,6 +290,82 @@ test_wtrm_refuses_when_plan_archive_fails() {
   return "$result"
 }
 
+test_planning_dir_survives_legacy_plan_files_override() {
+  tmp=$(new_tmp_dir)
+  origin="$tmp/origin.git"
+  main="$tmp/main"
+  workroot="$tmp/worktrees"
+  archive="$tmp/plan-archive"
+
+  git init --bare "$origin" >/dev/null
+  git init "$main" >/dev/null
+  git -C "$main" config user.name "Test User"
+  git -C "$main" config user.email "test@example.com"
+  printf 'hi\n' >"$main/README.md"
+  printf '.planning/\n' >"$main/.gitignore"
+  git -C "$main" add README.md .gitignore
+  git -C "$main" commit -m initial >/dev/null
+  git -C "$main" branch -M main
+  git -C "$main" remote add origin "$origin"
+  git -C "$main" push -u origin main >/dev/null 2>&1
+
+  HELPER="$HELPER" MAIN="$main" WORKTREE_ROOT="$workroot" WT_PLAN_ARCHIVE="$archive" \
+    WT_PLAN_FILES='task_plan.md findings.md progress.md' WT_BRANCH_PREFIX='' WT_NO_SETUP=1 bash -c '
+    set -e
+    . "$HELPER"
+    cd "$MAIN"
+    wt feature-legacy-plan-files >/dev/null
+    mkdir -p .planning/active && printf "notes\n" > .planning/active/progress.md
+    wtrm >/dev/null
+    test -f "$WT_PLAN_ARCHIVE/main/feature-legacy-plan-files/.planning/active/progress.md"
+    git -C "$MAIN" branch -D feature-legacy-plan-files >/dev/null
+    cd "$MAIN"
+    wt feature-legacy-plan-files >/dev/null
+    test "$(cat .planning/active/progress.md)" = "notes"
+  '
+
+  result=$?
+  rm -rf "$tmp"
+  return "$result"
+}
+
+test_zsh_archives_planning_dir() {
+  command -v zsh >/dev/null 2>&1 || return 0
+
+  tmp=$(new_tmp_dir)
+  origin="$tmp/origin.git"
+  main="$tmp/main"
+  workroot="$tmp/worktrees"
+  archive="$tmp/plan-archive"
+
+  git init --bare "$origin" >/dev/null
+  git init "$main" >/dev/null
+  git -C "$main" config user.name "Test User"
+  git -C "$main" config user.email "test@example.com"
+  printf 'hi\n' >"$main/README.md"
+  printf '.planning/\n' >"$main/.gitignore"
+  git -C "$main" add README.md .gitignore
+  git -C "$main" commit -m initial >/dev/null
+  git -C "$main" branch -M main
+  git -C "$main" remote add origin "$origin"
+  git -C "$main" push -u origin main >/dev/null 2>&1
+
+  HELPER="$HELPER" MAIN="$main" WORKTREE_ROOT="$workroot" WT_PLAN_ARCHIVE="$archive" \
+    WT_BRANCH_PREFIX='' WT_NO_SETUP=1 zsh -c '
+    set -e
+    . "$HELPER"
+    cd "$MAIN"
+    wt feature-zsh-plan >/dev/null
+    mkdir -p .planning/active && printf "zsh notes\n" > .planning/active/progress.md
+    wtrm >/dev/null
+    test -f "$WT_PLAN_ARCHIVE/main/feature-zsh-plan/.planning/active/progress.md"
+  '
+
+  result=$?
+  rm -rf "$tmp"
+  return "$result"
+}
+
 test_wtco_rejects_missing_name() {
   output=$(bash -c '. "$1"; wtco' sh "$HELPER" 2>&1) && return 1
   printf '%s\n' "$output" | grep -q 'usage: wtco <branch>'
@@ -416,6 +492,8 @@ run_test "real wt/wtrm worktree flow" test_real_worktree_flow
 run_test "wtrm refuses named worktree without plan files" test_wtrm_refuses_named_worktree_without_plan_files
 run_test "wtrm removes planless worktree with explicit override" test_wtrm_removes_planless_worktree_with_explicit_override
 run_test "wtrm refuses when plan archive fails" test_wtrm_refuses_when_plan_archive_fails
+run_test "planning dir survives legacy WT_PLAN_FILES override" test_planning_dir_survives_legacy_plan_files_override
+run_test "zsh archives planning dir" test_zsh_archives_planning_dir
 run_test "wtco rejects missing branch" test_wtco_rejects_missing_name
 run_test "real wtco flow" test_real_wtco_flow
 run_test "setup hook runs in fresh worktree" test_setup_hook_runs

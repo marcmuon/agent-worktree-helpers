@@ -163,6 +163,27 @@ _awh_plan_archive_dir() {
   printf '%s/%s/%s\n' "$root" "$repo_name" "$slug"
 }
 
+_awh_plan_items() {
+  local items
+  items=${WT_PLAN_FILES:-"task_plan.md findings.md progress.md .planning"}
+
+  # Treat the parallel planning directory as a safety default even if a shell
+  # session still has an older WT_PLAN_FILES override in its environment.
+  printf '%s .planning\n' "$items" | awk '
+    {
+      for (i = 1; i <= NF; i++) {
+        if (!seen[$i]++) {
+          print $i
+        }
+      }
+    }
+  '
+}
+
+_awh_plan_checked_items() {
+  printf '%s' "$1" | tr '\n' ' '
+}
+
 # Copy a worktree's planning files into the archive before the worktree dies.
 _awh_plan_save() {
   local wt repo_name branch dest items item saved found
@@ -173,13 +194,13 @@ _awh_plan_save() {
   [ "${WT_NO_PLAN:-0}" = "1" ] && return 0
   [ -n "$branch" ] || branch=$(basename "$wt")
 
-  items=${WT_PLAN_FILES:-"task_plan.md findings.md progress.md .planning"}
+  items=$(_awh_plan_items)
   dest=$(_awh_plan_archive_dir "$repo_name" "$branch")
 
   saved=
   found=
-  # shellcheck disable=SC2086
-  for item in $items; do
+  while IFS= read -r item; do
+    [ -n "$item" ] || continue
     if [ -e "$wt/$item" ]; then
       found="$found $item"
       if ! mkdir -p "$dest"; then
@@ -197,12 +218,15 @@ _awh_plan_save() {
         return 1
       fi
     fi
-  done
+  done <<EOF
+$items
+EOF
 
   if [ -n "$saved" ]; then
     printf 'plan: archived%s -> %s\n' "$saved" "$dest"
   elif [ -z "$found" ]; then
     _awh_err "plan: no configured planning files found in $wt"
+    _awh_err "plan: checked: $(_awh_plan_checked_items "$items")"
     _awh_err "plan: refusing removal; use WT_NO_PLAN=1 wtrm to remove without archiving"
     return 1
   fi
@@ -222,14 +246,16 @@ _awh_plan_restore() {
   src=$(_awh_plan_archive_dir "$repo_name" "$branch")
   [ -d "$src" ] || return 0
 
-  items=${WT_PLAN_FILES:-"task_plan.md findings.md progress.md .planning"}
+  items=$(_awh_plan_items)
   restored=
-  # shellcheck disable=SC2086
-  for item in $items; do
+  while IFS= read -r item; do
+    [ -n "$item" ] || continue
     if [ -e "$src/$item" ] && [ ! -e "$wt/$item" ]; then
       cp -R "$src/$item" "$wt/" 2>/dev/null && restored="$restored $item"
     fi
-  done
+  done <<EOF
+$items
+EOF
 
   [ -n "$restored" ] && printf 'plan: restored%s from %s\n' "$restored" "$src"
   return 0
