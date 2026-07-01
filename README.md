@@ -127,7 +127,8 @@ If you run planning agents, their scratch (`task_plan.md`, `.planning/`, …) li
 - `wtrm` copies those files to a global archive (`~/worktree-planning/<repo>/<branch>/`) **before** deleting the worktree.
 - `wt` / `wtco` / `wtpr` restore them when you recreate a worktree on the **same branch** — pick up exactly where you left off.
 - `wtplan` lists what's archived; `wtplan <branch>` prints its path, e.g. `cursor "$(wtplan you/feature)"`.
-- If no configured planning files are present, `wtrm` says so. If a configured planning file cannot be archived, `wtrm` aborts and leaves the worktree in place.
+- If no configured planning files are present, `wtrm` aborts and leaves the worktree in place. Use `WT_NO_PLAN=1 wtrm` only when you explicitly want to remove a worktree without archiving plans.
+- If a configured planning file cannot be archived, `wtrm` aborts and leaves the worktree in place.
 
 The archive lives outside any repo, so it's never committed and never clutters your notes app — browse it in your editor any time. Tune what's carried with `WT_PLAN_FILES`, where it lives with `WT_PLAN_ARCHIVE`, or skip it for one command with `WT_NO_PLAN=1`.
 

@@ -202,7 +202,9 @@ _awh_plan_save() {
   if [ -n "$saved" ]; then
     printf 'plan: archived%s -> %s\n' "$saved" "$dest"
   elif [ -z "$found" ]; then
-    printf 'plan: no configured planning files found in %s\n' "$wt"
+    _awh_err "plan: no configured planning files found in $wt"
+    _awh_err "plan: refusing removal; use WT_NO_PLAN=1 wtrm to remove without archiving"
+    return 1
   fi
   return 0
 }
@@ -442,7 +444,7 @@ wtrm() {
   branch=$(git -C "$repo" branch --show-current 2>/dev/null || true)
 
   if ! _awh_plan_save "$repo_abs" "$(basename "$main_abs")" "$branch"; then
-    _awh_err "wtrm: planning archive failed; worktree was not removed"
+    _awh_err "wtrm: planning archive did not complete; worktree was not removed"
     return 1
   fi
 
