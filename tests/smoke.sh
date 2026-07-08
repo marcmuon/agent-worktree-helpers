@@ -302,7 +302,7 @@ test_planning_dir_survives_legacy_plan_files_override() {
   git -C "$main" config user.name "Test User"
   git -C "$main" config user.email "test@example.com"
   printf 'hi\n' >"$main/README.md"
-  printf '.planning/\n' >"$main/.gitignore"
+  printf 'task_plan.md\ncustom-notes.md\n.planning/\n' >"$main/.gitignore"
   git -C "$main" add README.md .gitignore
   git -C "$main" commit -m initial >/dev/null
   git -C "$main" branch -M main
@@ -310,17 +310,22 @@ test_planning_dir_survives_legacy_plan_files_override() {
   git -C "$main" push -u origin main >/dev/null 2>&1
 
   HELPER="$HELPER" MAIN="$main" WORKTREE_ROOT="$workroot" WT_PLAN_ARCHIVE="$archive" \
-    WT_PLAN_FILES='task_plan.md findings.md progress.md' WT_BRANCH_PREFIX='' WT_NO_SETUP=1 bash -c '
+    WT_PLAN_FILES='custom-notes.md' WT_BRANCH_PREFIX='' WT_NO_SETUP=1 bash -c '
     set -e
     . "$HELPER"
     cd "$MAIN"
     wt feature-legacy-plan-files >/dev/null
+    printf "my plan\n" > task_plan.md
+    printf "extra\n" > custom-notes.md
     mkdir -p .planning/active && printf "notes\n" > .planning/active/progress.md
     wtrm >/dev/null
+    test -f "$WT_PLAN_ARCHIVE/main/feature-legacy-plan-files/task_plan.md"
+    test -f "$WT_PLAN_ARCHIVE/main/feature-legacy-plan-files/custom-notes.md"
     test -f "$WT_PLAN_ARCHIVE/main/feature-legacy-plan-files/.planning/active/progress.md"
     git -C "$MAIN" branch -D feature-legacy-plan-files >/dev/null
     cd "$MAIN"
     wt feature-legacy-plan-files >/dev/null
+    test "$(cat task_plan.md)" = "my plan"
     test "$(cat .planning/active/progress.md)" = "notes"
   '
 
@@ -343,7 +348,7 @@ test_zsh_archives_planning_dir() {
   git -C "$main" config user.name "Test User"
   git -C "$main" config user.email "test@example.com"
   printf 'hi\n' >"$main/README.md"
-  printf '.planning/\n' >"$main/.gitignore"
+  printf '.omx-briefs/\n.planning/\n' >"$main/.gitignore"
   git -C "$main" add README.md .gitignore
   git -C "$main" commit -m initial >/dev/null
   git -C "$main" branch -M main
@@ -356,9 +361,11 @@ test_zsh_archives_planning_dir() {
     . "$HELPER"
     cd "$MAIN"
     wt feature-zsh-plan >/dev/null
-    mkdir -p .planning/active && printf "zsh notes\n" > .planning/active/progress.md
+    mkdir -p .planning/active .omx-briefs && printf "zsh notes\n" > .planning/active/progress.md
+    printf "zsh brief\n" > .omx-briefs/build.md
     wtrm >/dev/null
     test -f "$WT_PLAN_ARCHIVE/main/feature-zsh-plan/.planning/active/progress.md"
+    test -f "$WT_PLAN_ARCHIVE/main/feature-zsh-plan/.omx-briefs/build.md"
   '
 
   result=$?
@@ -366,7 +373,7 @@ test_zsh_archives_planning_dir() {
   return "$result"
 }
 
-test_agent_state_dirs_archive_and_restore() {
+test_planning_scratch_archives_agent_state_dirs_skipped() {
   tmp=$(new_tmp_dir)
   origin="$tmp/origin.git"
   main="$tmp/main"
@@ -378,7 +385,7 @@ test_agent_state_dirs_archive_and_restore() {
   git -C "$main" config user.name "Test User"
   git -C "$main" config user.email "test@example.com"
   printf 'hi\n' >"$main/README.md"
-  printf '.agents/\n.claude/\n.codex/\n.cursor/\n.omc/\n.omx/\n.planning/\n' >"$main/.gitignore"
+  printf '.agents/\n.claude/\n.codex/\n.cursor/\n.omc/\n.omx/\n.omx-briefs/\n.planning/\n' >"$main/.gitignore"
   git -C "$main" add README.md .gitignore
   git -C "$main" commit -m initial >/dev/null
   git -C "$main" branch -M main
@@ -386,37 +393,33 @@ test_agent_state_dirs_archive_and_restore() {
   git -C "$main" push -u origin main >/dev/null 2>&1
 
   HELPER="$HELPER" MAIN="$main" WORKTREE_ROOT="$workroot" WT_PLAN_ARCHIVE="$archive" \
-    WT_PLAN_FILES='task_plan.md findings.md progress.md' WT_BRANCH_PREFIX='' WT_NO_SETUP=1 zsh -c '
+    WT_PLAN_FILES='task_plan.md findings.md progress.md' WT_BRANCH_PREFIX='' WT_NO_SETUP=1 bash -c '
     set -e
     . "$HELPER"
     cd "$MAIN"
     wt feature-agent-state >/dev/null
-    mkdir -p .agents/skills/demo .claude .codex .cursor/rules .omc .omx/state .planning/active
+    mkdir -p .agents/skills/demo .claude/skills .codex .cursor/rules .omc .omx/state .omx-briefs .planning/active
     printf "skill\n" > .agents/skills/demo/SKILL.md
-    printf "claude\n" > .claude/settings.local.json
+    printf "claude\n" > .claude/skills/SKILL.md
     printf "codex\n" > .codex/config.toml
     printf "cursor\n" > .cursor/rules/local.mdc
     printf "omc\n" > .omc/state.json
     printf "omx\n" > .omx/state/run.json
+    printf "brief\n" > .omx-briefs/build.md
     printf "plan\n" > .planning/active/progress.md
     wtrm >/dev/null
-    for f in \
-      .agents/skills/demo/SKILL.md \
-      .claude/settings.local.json \
-      .codex/config.toml \
-      .cursor/rules/local.mdc \
-      .omc/state.json \
-      .omx/state/run.json \
-      .planning/active/progress.md
-    do
-      test -f "$WT_PLAN_ARCHIVE/main/feature-agent-state/$f"
+    test -f "$WT_PLAN_ARCHIVE/main/feature-agent-state/.omx-briefs/build.md"
+    test -f "$WT_PLAN_ARCHIVE/main/feature-agent-state/.planning/active/progress.md"
+    for d in .agents .claude .codex .cursor .omc .omx; do
+      test ! -e "$WT_PLAN_ARCHIVE/main/feature-agent-state/$d"
     done
     git -C "$MAIN" branch -D feature-agent-state >/dev/null
     cd "$MAIN"
     wt feature-agent-state >/dev/null
-    test "$(cat .codex/config.toml)" = "codex"
-    test "$(cat .omx/state/run.json)" = "omx"
+    test "$(cat .omx-briefs/build.md)" = "brief"
     test "$(cat .planning/active/progress.md)" = "plan"
+    test ! -e .codex
+    test ! -e .omx
   '
 
   result=$?
@@ -552,7 +555,7 @@ run_test "wtrm removes planless worktree with explicit override" test_wtrm_remov
 run_test "wtrm refuses when plan archive fails" test_wtrm_refuses_when_plan_archive_fails
 run_test "planning dir survives legacy WT_PLAN_FILES override" test_planning_dir_survives_legacy_plan_files_override
 run_test "zsh archives planning dir" test_zsh_archives_planning_dir
-run_test "agent state dirs archive and restore" test_agent_state_dirs_archive_and_restore
+run_test "planning scratch archives, agent state dirs skipped" test_planning_scratch_archives_agent_state_dirs_skipped
 run_test "wtco rejects missing branch" test_wtco_rejects_missing_name
 run_test "real wtco flow" test_real_wtco_flow
 run_test "setup hook runs in fresh worktree" test_setup_hook_runs
