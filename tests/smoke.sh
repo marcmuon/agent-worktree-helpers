@@ -348,7 +348,7 @@ test_zsh_archives_planning_dir() {
   git -C "$main" config user.name "Test User"
   git -C "$main" config user.email "test@example.com"
   printf 'hi\n' >"$main/README.md"
-  printf '.planning/\n' >"$main/.gitignore"
+  printf '.omx-briefs/\n.planning/\n' >"$main/.gitignore"
   git -C "$main" add README.md .gitignore
   git -C "$main" commit -m initial >/dev/null
   git -C "$main" branch -M main
@@ -361,9 +361,11 @@ test_zsh_archives_planning_dir() {
     . "$HELPER"
     cd "$MAIN"
     wt feature-zsh-plan >/dev/null
-    mkdir -p .planning/active && printf "zsh notes\n" > .planning/active/progress.md
+    mkdir -p .planning/active .omx-briefs && printf "zsh notes\n" > .planning/active/progress.md
+    printf "zsh brief\n" > .omx-briefs/build.md
     wtrm >/dev/null
     test -f "$WT_PLAN_ARCHIVE/main/feature-zsh-plan/.planning/active/progress.md"
+    test -f "$WT_PLAN_ARCHIVE/main/feature-zsh-plan/.omx-briefs/build.md"
   '
 
   result=$?
@@ -391,7 +393,7 @@ test_planning_scratch_archives_agent_state_dirs_skipped() {
   git -C "$main" push -u origin main >/dev/null 2>&1
 
   HELPER="$HELPER" MAIN="$main" WORKTREE_ROOT="$workroot" WT_PLAN_ARCHIVE="$archive" \
-    WT_PLAN_FILES='task_plan.md findings.md progress.md' WT_BRANCH_PREFIX='' WT_NO_SETUP=1 zsh -c '
+    WT_PLAN_FILES='task_plan.md findings.md progress.md' WT_BRANCH_PREFIX='' WT_NO_SETUP=1 bash -c '
     set -e
     . "$HELPER"
     cd "$MAIN"
