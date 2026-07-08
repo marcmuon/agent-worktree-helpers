@@ -165,11 +165,14 @@ _awh_plan_archive_dir() {
 
 _awh_plan_items() {
   local items protected
-  items=${WT_PLAN_FILES:-"task_plan.md findings.md progress.md .planning"}
-  protected=".planning .codex .claude .omc .omx .agents .cursor"
+  items=${WT_PLAN_FILES:-""}
+  protected="task_plan.md findings.md progress.md .planning .omx-briefs"
 
-  # Treat agent-local scratch dirs as safety defaults even if a shell session
-  # still has an older WT_PLAN_FILES override in its environment.
+  # The protected planning scratch is always carried, even if a shell session
+  # still has an older WT_PLAN_FILES override in its environment; WT_PLAN_FILES
+  # can only add items. Agent config/state dirs (.claude, .codex, .cursor,
+  # .agents, .omc, .omx) are deliberately excluded: they are usually committed
+  # to the repo or hold caches/logs, not plans.
   printf '%s %s\n' "$items" "$protected" | awk '
     {
       for (i = 1; i <= NF; i++) {
