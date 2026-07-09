@@ -188,6 +188,44 @@ _awh_plan_checked_items() {
   printf '%s' "$1" | tr '\n' ' '
 }
 
+# Return 0 if the given repo-relative path is a plan item or nested in one.
+# NB: "rel" not "path" — path is tied to PATH in zsh; localizing it breaks
+# command lookup for the rest of the function.
+_awh_plan_path_is_scratch() {
+  local rel item
+  rel=$1
+  while IFS= read -r item; do
+    [ -n "$item" ] || continue
+    case "$rel" in
+      "$item" | "$item"/*) return 0 ;;
+    esac
+  done <<EOF
+$(_awh_plan_items)
+EOF
+  return 1
+}
+
+# Filter untracked planning scratch out of porcelain status output. wtrm
+# archives those files before removal, so they alone should not block it —
+# even in repos that don't gitignore them.
+_awh_status_without_plan_scratch() {
+  local line rel
+  [ -n "$1" ] || return 0
+  printf '%s\n' "$1" | while IFS= read -r line; do
+    case "$line" in
+      '?? '*)
+        rel=${line#"?? "}
+        rel=${rel%/}
+        if _awh_plan_path_is_scratch "$rel"; then
+          continue
+        fi
+        ;;
+    esac
+    printf '%s\n' "$line"
+  done
+  return 0
+}
+
 # Copy a worktree's planning files into the archive before the worktree dies.
 _awh_plan_save() {
   local wt repo_name branch dest items item saved found
@@ -424,7 +462,8 @@ wtplan() {
 }
 
 wtrm() {
-  local repo main repo_name root target repo_abs main_abs dirty branch
+  # NB: "porcelain" not "status" — status is a read-only special var in zsh.
+  local repo main repo_name root target repo_abs main_abs porcelain dirty branch
 
   if [ "$#" -gt 1 ]; then
     _awh_err "usage: wtrm [name-or-path]"
@@ -464,7 +503,8 @@ wtrm() {
     return 1
   fi
 
-  dirty=$(git -C "$repo" status --short)
+  porcelain=$(git -C "$repo" status --porcelain)
+  dirty=$(_awh_status_without_plan_scratch "$porcelain")
   if [ -n "$dirty" ]; then
     _awh_err "wtrm: refusing to remove a dirty worktree:"
     printf '%s\n' "$dirty" >&2
@@ -479,7 +519,13 @@ wtrm() {
   fi
 
   cd "$main_abs" || return 1
-  git -C "$main_abs" worktree remove "$repo_abs" || return 1
+  if [ -n "$porcelain" ]; then
+    # Only untracked planning scratch remains, and it was archived above;
+    # git worktree remove refuses untracked files without --force.
+    git -C "$main_abs" worktree remove --force "$repo_abs" || return 1
+  else
+    git -C "$main_abs" worktree remove "$repo_abs" || return 1
+  fi
   git -C "$main_abs" worktree prune || return 1
 
   printf 'wtrm: removed worktree: %s\n' "$repo_abs"
