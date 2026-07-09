@@ -348,7 +348,9 @@ test_zsh_archives_planning_dir() {
   git -C "$main" config user.name "Test User"
   git -C "$main" config user.email "test@example.com"
   printf 'hi\n' >"$main/README.md"
-  printf '.omx-briefs/\n.planning/\n' >"$main/.gitignore"
+  # .planning is gitignored, .omx-briefs deliberately is not: the untracked
+  # scratch filter and forced removal must also work under zsh.
+  printf '.planning/\n' >"$main/.gitignore"
   git -C "$main" add README.md .gitignore
   git -C "$main" commit -m initial >/dev/null
   git -C "$main" branch -M main
@@ -361,9 +363,11 @@ test_zsh_archives_planning_dir() {
     . "$HELPER"
     cd "$MAIN"
     wt feature-zsh-plan >/dev/null
+    WT="$PWD"
     mkdir -p .planning/active .omx-briefs && printf "zsh notes\n" > .planning/active/progress.md
     printf "zsh brief\n" > .omx-briefs/build.md
     wtrm >/dev/null
+    test ! -d "$WT"
     test -f "$WT_PLAN_ARCHIVE/main/feature-zsh-plan/.planning/active/progress.md"
     test -f "$WT_PLAN_ARCHIVE/main/feature-zsh-plan/.omx-briefs/build.md"
   '
@@ -420,6 +424,56 @@ test_planning_scratch_archives_agent_state_dirs_skipped() {
     test "$(cat .planning/active/progress.md)" = "plan"
     test ! -e .codex
     test ! -e .omx
+  '
+
+  result=$?
+  rm -rf "$tmp"
+  return "$result"
+}
+
+test_wtrm_archives_untracked_scratch_not_gitignored() {
+  tmp=$(new_tmp_dir)
+  origin="$tmp/origin.git"
+  main="$tmp/main"
+  workroot="$tmp/worktrees"
+  archive="$tmp/plan-archive"
+
+  git init --bare "$origin" >/dev/null
+  git init "$main" >/dev/null
+  git -C "$main" config user.name "Test User"
+  git -C "$main" config user.email "test@example.com"
+  printf 'hi\n' >"$main/README.md"
+  git -C "$main" add README.md
+  git -C "$main" commit -m initial >/dev/null
+  git -C "$main" branch -M main
+  git -C "$main" remote add origin "$origin"
+  git -C "$main" push -u origin main >/dev/null 2>&1
+
+  HELPER="$HELPER" MAIN="$main" WORKTREE_ROOT="$workroot" WT_PLAN_ARCHIVE="$archive" \
+    WT_BRANCH_PREFIX='' WT_NO_SETUP=1 bash -c '
+    set -e
+    . "$HELPER"
+    cd "$MAIN"
+    wt feature-unignored-scratch >/dev/null
+    WT="$PWD"
+    OUT="$MAIN.wtrm-out"
+    printf "my plan\n" > task_plan.md
+    mkdir -p .omx-briefs && printf "brief\n" > .omx-briefs/build.md
+    printf "stray\n" > stray.txt
+    if wtrm >"$OUT" 2>&1; then
+      exit 1
+    fi
+    grep -q "refusing to remove a dirty worktree" "$OUT"
+    grep -q "stray.txt" "$OUT"
+    if grep -q "omx-briefs" "$OUT"; then
+      exit 1
+    fi
+    test -d "$WT"
+    rm stray.txt
+    wtrm >/dev/null
+    test ! -d "$WT"
+    test -f "$WT_PLAN_ARCHIVE/main/feature-unignored-scratch/task_plan.md"
+    test -f "$WT_PLAN_ARCHIVE/main/feature-unignored-scratch/.omx-briefs/build.md"
   '
 
   result=$?
@@ -556,6 +610,7 @@ run_test "wtrm refuses when plan archive fails" test_wtrm_refuses_when_plan_arch
 run_test "planning dir survives legacy WT_PLAN_FILES override" test_planning_dir_survives_legacy_plan_files_override
 run_test "zsh archives planning dir" test_zsh_archives_planning_dir
 run_test "planning scratch archives, agent state dirs skipped" test_planning_scratch_archives_agent_state_dirs_skipped
+run_test "wtrm archives untracked scratch that is not gitignored" test_wtrm_archives_untracked_scratch_not_gitignored
 run_test "wtco rejects missing branch" test_wtco_rejects_missing_name
 run_test "real wtco flow" test_real_wtco_flow
 run_test "setup hook runs in fresh worktree" test_setup_hook_runs
