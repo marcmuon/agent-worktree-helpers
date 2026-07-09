@@ -8,7 +8,7 @@ Terminal tabs are windows. Git worktrees are isolated folders.
 
 A Git worktree gives you a second checkout of the *same* repo on its own branch, sharing one `.git`. No second clone, no duplicated history. You keep your main checkout clean and spin up a throwaway folder whenever another tab or agent needs its own space.
 
-It works in Ghostty, iTerm, Terminal, tmux, cmux, and plain bash or zsh. It is not a plugin for any of them.
+It works in Ghostty, iTerm, Terminal, Yaw, tmux, cmux, and plain bash or zsh. It is not a plugin for any of them.
 
 ## Why bother
 
@@ -88,6 +88,8 @@ claude           # "review this diff vs main"
 ```
 
 A pattern that works well: a **planning** agent (e.g. Claude) reads the clean main checkout and writes a spec; an **implementing** agent (e.g. Codex) works inside a `wt` worktree from that spec. Different agents, different folders, zero overlap. The tab title (`example-app:add-export-button`) tells you at a glance which branch a given pane will modify.
+
+For a runnable starting point, [`examples/wt-kickoff.sh`](examples/wt-kickoff.sh) is a small `wt-kickoff <slug> [goal]` function that provisions a worktree, seeds a `.planning/<slug>/task_plan.md`, and launches an agent already pointed at it — agent- and terminal-agnostic, meant to be copied and adapted (there's a one-line note in it for opening the agent in a fresh Yaw/tmux window).
 
 Rules of thumb:
 
